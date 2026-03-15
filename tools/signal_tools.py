@@ -274,65 +274,156 @@ def get_detection_results(line_id: str = "LINE-B") -> dict:
     }
 
 
-def get_manufacturing_dashboard() -> dict:
+def get_manufacturing_dashboard(machine_id: str = "M001", line_id: str = "LINE-A") -> dict:
     """
-    [Tool] 제조 현장 통합 대시보드 — 모든 신호 종합
-    Track A/B 전체 결과를 하나의 뷰로 통합
+    제조 현장 통합 대시보드 — 5개 신호를 종합해 위험도 점수 산출
+    슬라이드 v1.7 S4 섹션 6.1 기준
 
+    risk_score 가중치:
+    - ANOMALY 상태: +40
+    - RUL HIGH 긴급도: +30
+    - 불량률 HIGH: +20
+    - 결함 탐지 HIGH: +10
+    임계값: CRITICAL ≥60, WARNING ≥30, NORMAL <30
+
+    Args:
+        machine_id: 설비 ID (기본값: M001)
+        line_id: 생산 라인 ID (기본값: LINE-A)
     Returns:
-        dict: 설비상태(A) + 품질상태(B) + 종합 권장사항
+        dict: {tool, value: {risk_score, risk_level, recommended_action, risk_factors, signals, timestamp}}
     """
-    anomaly = get_anomaly_status()
-    rul = get_rul_prediction()
-    maintenance = get_maintenance_schedule()
-    defect = get_defect_rate()
-    detection = get_detection_results()
+    # 각 신호 조회 (기존 함수 재사용)
+    anomaly = get_anomaly_status(machine_id)
+    rul = get_rul_prediction(machine_id)
+    maintenance = get_maintenance_schedule(machine_id)
+    defect = get_defect_rate(line_id)
+    detection = get_detection_results(line_id)
 
-    # 종합 위험도 계산
+    # risk_score 계산 (슬라이드 v1.7 가중치)
     risk_score = 0
-    if anomaly['status'] == 'ANOMALY':
+    risk_factors = []
+
+    if anomaly.get("status") == "ANOMALY":
         risk_score += 40
-    if rul['maintenance_urgency'] == 'HIGH':
+        risk_factors.append("이상탐지 +40")
+
+    rul_urgency = rul.get("maintenance_urgency", "LOW")
+    if rul_urgency == "HIGH":
         risk_score += 30
-    elif rul['maintenance_urgency'] == 'MEDIUM':
+        risk_factors.append("RUL 긴급 +30")
+    elif rul_urgency == "MEDIUM":
         risk_score += 15
-    if defect['alert']:
+        risk_factors.append("RUL 보통 +15")
+
+    defect_rate = defect.get("defect_rate", 0)
+    if defect.get("alert") or defect_rate >= 0.10:
         risk_score += 20
-    if detection['alert']:
+        risk_factors.append("불량률 높음 +20")
+    elif defect_rate >= 0.05:
         risk_score += 10
+        risk_factors.append("불량률 보통 +10")
 
-    overall_status = "CRITICAL" if risk_score >= 60 else ("WARNING" if risk_score >= 30 else "NORMAL")
+    if detection.get("alert"):
+        risk_score += 10
+        risk_factors.append("결함탐지 높음 +10")
 
-    # 권장사항 생성
-    recommendations = []
-    if anomaly['status'] == 'ANOMALY':
-        recommendations.append(f"🔴 설비 M001 이상 감지 — 즉시 점검 필요 (이상점수: {anomaly['anomaly_score']})")
-    if rul['maintenance_urgency'] == 'HIGH':
-        recommendations.append(f"🔴 잔여수명 {rul['rul_days']}일 — {maintenance['recommended_action']}")
-    if defect['alert']:
-        recommendations.append(f"🟠 LINE-A 불량률 {defect['defect_rate_pct']} 초과 — 공정 파라미터 점검")
-    if detection['alert']:
-        recommendations.append(f"🟠 LINE-B 불량 {detection['defects_detected']}개 탐지 — 카메라 검사 강화")
-    if not recommendations:
-        recommendations.append("✅ 모든 라인 정상 운영 중")
+    # 위험 등급 결정
+    if risk_score >= 60:
+        risk_level = "CRITICAL"
+        action = "즉시 설비 점검 필요"
+    elif risk_score >= 30:
+        risk_level = "WARNING"
+        action = "금일 중 점검 예약"
+    else:
+        risk_level = "NORMAL"
+        action = "정상 가동 유지"
 
     return {
         "tool": "get_manufacturing_dashboard",
-        "timestamp": datetime.now().isoformat(),
-        "overall_status": overall_status,
+        "value": {
+            "machine_id": machine_id,
+            "line_id": line_id,
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+            "recommended_action": action,
+            "risk_factors": risk_factors,
+            "signals": {
+                "anomaly": {k: v for k, v in anomaly.items() if k != "tool"},
+                "rul": {k: v for k, v in rul.items() if k != "tool"},
+                "maintenance": {k: v for k, v in maintenance.items() if k != "tool"},
+                "defect_rate": {k: v for k, v in defect.items() if k != "tool"},
+                "detection": {k: v for k, v in detection.items() if k != "tool"},
+            },
+            "timestamp": datetime.now().isoformat(),
+        },
+        # 하위 호환: 기존 코드가 top-level 키를 참조할 경우를 위해 유지
+        "overall_status": risk_level,
         "risk_score": risk_score,
-        "track_a": {
-            "anomaly": anomaly['summary'],
-            "rul": rul['summary'],
-            "maintenance": maintenance['summary']
-        },
-        "track_b": {
-            "defect_rate": defect['summary'],
-            "detection": detection['summary']
-        },
-        "recommendations": recommendations,
-        "summary": f"현장 종합: {overall_status} (위험도 {risk_score}/100)"
+        "summary": f"현장 종합: {risk_level} (위험도 {risk_score}/100)",
     }
+
+
+def send_slack_alert(
+    machine_id: str,
+    risk_level: str,
+    risk_score: int,
+    action: str,
+    webhook_url: str = None
+) -> dict:
+    """
+    Slack 웹훅으로 제조 경보 전송
+    슬라이드 v1.7 S4 섹션 7.2 기준
+    CRITICAL/WARNING 시 자동 호출
+
+    Args:
+        machine_id: 설비 ID
+        risk_level: 위험 등급 (CRITICAL / WARNING / NORMAL)
+        risk_score: 위험 점수 (0~100)
+        action: 권장 조치 문자열
+        webhook_url: Slack Incoming Webhook URL (없으면 환경변수 SLACK_WEBHOOK_URL 사용)
+    Returns:
+        dict: {tool, value: {status, level}}
+    """
+    import json as _json
+    import os as _os
+
+    webhook_url = webhook_url or _os.environ.get("SLACK_WEBHOOK_URL")
+
+    color_map = {"CRITICAL": "#FF0000", "WARNING": "#FFA500", "NORMAL": "#00FF00"}
+    color = color_map.get(risk_level, "#888888")
+
+    import time as _time
+    payload = {
+        "attachments": [{
+            "color": color,
+            "title": f"🏭 제조 경보: {risk_level} — {machine_id}",
+            "fields": [
+                {"title": "위험 점수", "value": str(risk_score), "short": True},
+                {"title": "위험 등급", "value": risk_level, "short": True},
+                {"title": "권장 조치", "value": action, "short": False},
+            ],
+            "footer": "Manufacturing AI Monitor v1.7",
+            "ts": int(_time.time())
+        }]
+    }
+
+    if webhook_url:
+        try:
+            import urllib.request
+            data = _json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(
+                webhook_url, data=data,
+                headers={'Content-Type': 'application/json'}
+            )
+            urllib.request.urlopen(req, timeout=5)
+            return {"tool": "send_slack_alert", "value": {"status": "sent", "level": risk_level}}
+        except Exception as e:
+            return {"tool": "send_slack_alert", "value": {"status": "failed", "error": str(e)}}
+    else:
+        # webhook_url 없으면 시뮬레이션
+        print(f"[SLACK SIMULATION] {risk_level} 경보: {machine_id} (score={risk_score})")
+        print(f"  → {action}")
+        return {"tool": "send_slack_alert", "value": {"status": "simulated", "level": risk_level}}
 
 
 # ── 직접 실행 테스트 ───────────────────────────────────────────
