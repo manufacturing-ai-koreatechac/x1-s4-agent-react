@@ -345,7 +345,9 @@ def get_manufacturing_dashboard(machine_id: str = "M001", line_id: str = "LINE-A
             "line_id": line_id,
             "risk_score": risk_score,
             "risk_level": risk_level,
+            "overall_risk_level": risk_level,       # 슬라이드 S4 섹션 6.1 nested 호환
             "recommended_action": action,
+            "recommendations": [action],            # 슬라이드 S4 nested 호환 (배열)
             "risk_factors": risk_factors,
             "signals": {
                 "anomaly": {k: v for k, v in anomaly.items() if k != "tool"},
@@ -358,7 +360,14 @@ def get_manufacturing_dashboard(machine_id: str = "M001", line_id: str = "LINE-A
         },
         # 하위 호환: 기존 코드가 top-level 키를 참조할 경우를 위해 유지
         "overall_status": risk_level,
+        # 슬라이드 S4 섹션 6.1 호환 alias (dashboard['overall_risk_level'] 참조 지원)
+        "overall_risk_level": risk_level,
+        # 슬라이드 S4 섹션 6.1 호환 alias (dashboard['recommendations'] 참조 지원)
+        "recommendations": [action],
+        # 슬라이드 S4 호환 (dashboard['alarm_status'] 참조 지원)
+        "alarm_status": risk_level != "NORMAL",
         "risk_score": risk_score,
+        # 슬라이드 S5 Lab 호환
         "summary": f"현장 종합: {risk_level} (위험도 {risk_score}/100)",
     }
 
@@ -437,5 +446,5 @@ if __name__ == "__main__":
     print()
     dashboard = get_manufacturing_dashboard()
     print(f"📊 대시보드: {dashboard['summary']}")
-    for rec in dashboard['recommendations']:
-        print(f"  {rec}")
+    for factor in dashboard['value']['risk_factors']:
+        print(f"  {factor}")
