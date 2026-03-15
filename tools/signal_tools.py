@@ -2,10 +2,17 @@
 signal_tools.py — Track A/B 결과 신호 조회 도구
 X1 에이전트가 제조 AI 신호를 Tool로 조회할 수 있도록 구현
 
-신호 소스:
-  - Track A-2: 이상탐지(AutoEncoder), RUL(LSTM), 정비스케줄
-  - Track B-1: 품질검사(CNN ResNet18)
-  - Track B-2: 객체탐지(YOLOv8)
+신호 소스 (실파일 우선, 없으면 시뮬레이션 fallback):
+  - Track A-2: anomaly_signal.json (AutoEncoder 이상탐지)
+               rul_signal.json (LSTM RUL 예측)
+               maintenance_signal.json (예지보전 일정)
+  - Track B-1: defect_signal.json (CNN ResNet18 품질검사)
+  - Track B-2: detection_signal.json (YOLOv8 객체탐지)
+
+Track A-1 (FFT 이상탐지) 참고:
+  - Track A-1 outputs는 CSV 형식 (anomalies.csv, fft_analysis_summary.csv 등)
+  - JSON signal 형식은 A-2에서 통합 생성하므로 A-1은 SIGNAL_DIRS에 미포함
+  - A-1 결과는 A-2 노트북에서 참조하여 anomaly_signal.json에 반영됨
 """
 import json
 import os
@@ -167,7 +174,7 @@ def get_anomaly_status(machine_id: str = "M001") -> dict:
         "alert_level": v['alert_level'],
         "timestamp": signal['timestamp'],
         "source": signal['source'],
-        "summary": f"설비 {machine_id}: {v['status']} (점수 {v['anomaly_score']:.3f}/{v['threshold']:.2f})"
+        "summary": f"설비 {machine_id}: {v['status']} (점수 {v['anomaly_score']:.4f} / 임계값 {v['threshold']:.4f})"
     }
 
 
