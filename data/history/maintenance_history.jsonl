@@ -1,0 +1,2 @@
+{"ts": "2026-01-29T10:00:00", "machine_id": "M001", "signal_type": "maintenance", "value": 1.0, "status": "COMPLETED", "metadata": {"action": "오일 교체 + 필터 청소 + 전체 점검", "result": "정상 복구. 이상점수 0.22로 감소.", "cost": 350000, "type": "planned"}}
+{"ts": "2026-02-28T10:00:00", "machine_id": "M001", "signal_type": "maintenance", "value": 1.0, "status": "COMPLETED", "metadata": {"action": "베어링 점검 + 오일 보충 (베어링 교체 보류)", "result": "부분 개선. 베어링 마모 진행 중, 교체 필요 예상.", "cost": 120000, "type": "inspection"}}
